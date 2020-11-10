@@ -41,13 +41,17 @@ struct ElementByIndexCreator<T, OtherTypes...>
 /*! A carcass for the other fabrics that want to create a derived object
  *  on the stack instead of using a heap memory.
  *
+ *  Fabric can be used with classes that have several arguments in the
+ *  constructor. However, number of arguments in the constructor should be
+ *  the same for all used derived classes.
+ *
  *  How to use:
  *  Create your own fabric class and derive from this, or just use it inside.
  *
  *  \code
  *  struct A
  *  {
- *      virtual void doSmth() { // do smth A }
+ *      virtual void doSmth() = 0;
  *  };
  *
  *  struct B : A
@@ -96,8 +100,11 @@ struct ElementByIndexCreator<T, OtherTypes...>
  *      auto obj = fab.create( static_cast<MyFabric::Type>( i ) );
  *
  *      // using the element
- *      A& ref = obj.get();
- *      ref.doSmth();
+ *      if ( obj.isValid() )
+ *      {
+ *          A& ref = obj.get();
+ *          ref.doSmth();
+ *      }
  *  }
  *
  *  \endcode
@@ -116,8 +123,19 @@ protected:
     static_assert( NderivedTypes > 0,
                    "at least one derived type should be presented" );
 
-    struct StackContainer
+    class StackContainer
     {
+        //! Type that is used for indicating an error
+        struct ErrorType
+        {
+            template<typename... Args>
+            constexpr ErrorType( Args&&... args ) noexcept {}
+        };
+
+        //! Type of the variant that is used as a stack holder of the object
+        using InternalContainerT = std::variant<DerivedTypes..., ErrorType>;
+
+    public:
         /*! Returns the reference to the parent type from the object in the
          *  variant.
          *
@@ -130,17 +148,16 @@ protected:
         //! Checks if this variant contains error-type or derived types
         constexpr bool isValid() const noexcept;
 
+
+        /*! Can be used by user, but not recommended.
+         *  Use it only if this interface is not enough for you
+         */
+        constexpr const InternalContainerT& getVariant() const
+            { return derivedObject_; }
+
+        constexpr InternalContainerT& getVariant() { return derivedObject_; }
+
     private:
-        //! Type that is used for indicating an error
-        struct ErrorType
-        {
-            template<typename... Args>
-            constexpr ErrorType( Args&&... args ) noexcept {}
-        };
-
-        //! Type of the variant that is used as a stack holder of the object
-        using InternalContainerT = std::variant<DerivedTypes..., ErrorType>;
-
         constexpr explicit StackContainer( InternalContainerT&& obj )
             noexcept( std::is_nothrow_move_constructible_v<InternalContainerT> )
             : derivedObject_( std::move( obj ) ) {}
